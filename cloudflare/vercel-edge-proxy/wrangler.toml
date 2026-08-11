@@ -1,0 +1,8 @@
+name = "open-generative-ai-edge"
+main = "src/index.js"
+compatibility_date = "2026-08-11"
+workers_dev = false
+
+[[routes]]
+pattern = "video.zdc.mom/*"
+zone_id = "a4fa93ac392edfc75b82f44a7c982cd6"

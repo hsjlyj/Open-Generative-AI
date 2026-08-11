@@ -11,7 +11,9 @@
 - 管理后台：用户列表、积分调整、模型定价
 - 签名图片上传：参考图、首帧和尾帧
 
-生产站点：<https://open-generative-ai-beige.vercel.app>
+生产站点：<https://video.zdc.mom>
+
+备用 Vercel 地址：<https://open-generative-ai-beige.vercel.app>
 
 ---
 
@@ -76,6 +78,47 @@ Browser
 ```
 
 Provider API Key、会话密钥和 Data Worker 密钥始终只保存在服务端；浏览器不会收到这些密钥。
+
+---
+
+## 自定义域名与 CDN
+
+生产域名 `video.zdc.mom` 使用 Cloudflare DNS 和 Edge Worker 反向代理到 Vercel：
+
+```text
+video.zdc.mom
+  └── Cloudflare DNS CNAME（橙云代理）
+        └── open-generative-ai-edge Worker
+              └── open-generative-ai-beige.vercel.app
+```
+
+配置文件位于：
+
+```text
+cloudflare/vercel-edge-proxy/
+```
+
+策略：
+
+- HTML、登录页、API、任务状态和用户数据保持动态，不缓存；
+- `/_next/static/` 资源在 Cloudflare Edge 缓存 24 小时；
+- Cookie 和认证请求不会被静态资源缓存规则污染；
+- Worker 添加 `X-Edge-Proxy: Cloudflare Worker` 方便验证边缘路径。
+
+部署或更新 Edge Worker：
+
+```bash
+wrangler deploy --config cloudflare/vercel-edge-proxy/wrangler.toml
+```
+
+验证 CDN：
+
+```bash
+curl -I https://video.zdc.mom/studio
+curl -I https://video.zdc.mom/_next/static/chunks/<asset>.js
+```
+
+动态 HTML 应看到 `cf-cache-status: DYNAMIC`，静态 Next.js 资源应看到 `cf-cache-status: HIT`。
 
 ---
 
