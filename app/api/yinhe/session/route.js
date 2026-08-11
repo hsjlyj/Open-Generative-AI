@@ -4,6 +4,7 @@ import {
   verifyStudioAccessToken,
   verifyStudioSession,
 } from '@/lib/yinhe-auth';
+import { getMediaSettings } from '@/lib/yinhe-media';
 import { getProviderSettings } from '@/lib/yinhe-provider';
 
 export const runtime = 'nodejs';
@@ -13,10 +14,12 @@ const SESSION_SECONDS = 60 * 60 * 12;
 
 export async function GET(request) {
   const settings = getProviderSettings();
+  const mediaSettings = getMediaSettings();
   const sessionToken = request.cookies.get(COOKIE_NAME)?.value;
 
   return NextResponse.json({
     configured: Boolean(settings),
+    mediaConfigured: Boolean(mediaSettings),
     authenticated: Boolean(
       settings
       && sessionToken

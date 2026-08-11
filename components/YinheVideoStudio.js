@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
 
 const MODELS = [
@@ -11,6 +12,8 @@ const MODELS = [
 const FINAL_STATUSES = new Set(['SUCCESS', 'FAILED', 'CANCELLED']);
 const ASPECT_RATIOS = ['9:16', '16:9', '1:1', '4:3', '3:4', '21:9'];
 const RESOLUTIONS = ['480p', '720p', '1080p', '4K'];
+const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
+const MAX_REFERENCE_IMAGES = 9;
 
 const initialForm = {
   model: MODELS[0].id,
@@ -38,11 +41,32 @@ function readableStatus(status) {
   return labels[status] || status || '处理中';
 }
 
+function MediaTile({ asset, label, onRemove }) {
+  if (!asset) {
+    return <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-dashed border-white/15 bg-black/20 text-[11px] text-white/25">未上传</div>;
+  }
+
+  return (
+    <div className="group relative overflow-hidden rounded-xl border border-white/10 bg-black/35">
+      <Image unoptimized src={asset.previewUrl} alt={label} width={640} height={480} className="aspect-[4/3] w-full object-cover" />
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 pb-2 pt-7">
+        <p className="truncate text-[11px] text-white/75">{asset.name}</p>
+      </div>
+      <button type="button" onClick={onRemove} className="absolute right-2 top-2 rounded-full border border-white/20 bg-black/70 px-2 py-1 text-[10px] text-white/75 opacity-100 transition hover:border-rose-300/50 hover:text-rose-200 sm:opacity-0 sm:group-hover:opacity-100">移除</button>
+    </div>
+  );
+}
+
 export default function YinheVideoStudio() {
-  const [session, setSession] = useState({ loading: true, configured: false, authenticated: false });
+  const [session, setSession] = useState({ loading: true, configured: false, authenticated: false, mediaConfigured: false });
   const [accessToken, setAccessToken] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [form, setForm] = useState(initialForm);
+  const [mediaMode, setMediaMode] = useState('reference');
+  const [referenceImages, setReferenceImages] = useState([]);
+  const [startFrame, setStartFrame] = useState(null);
+  const [endFrame, setEndFrame] = useState(null);
+  const [uploadingCount, setUploadingCount] = useState(0);
   const [task, setTask] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -53,6 +77,7 @@ export default function YinheVideoStudio() {
   );
   const taskId = task?.taskId;
   const taskIsFinal = Boolean(task?.status && FINAL_STATUSES.has(task.status));
+  const isUploading = uploadingCount > 0;
 
   const updateForm = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -62,9 +87,14 @@ export default function YinheVideoStudio() {
     try {
       const response = await fetch('/api/yinhe/session', { cache: 'no-store' });
       const data = await response.json();
-      setSession({ loading: false, configured: Boolean(data.configured), authenticated: Boolean(data.authenticated) });
+      setSession({
+        loading: false,
+        configured: Boolean(data.configured),
+        authenticated: Boolean(data.authenticated),
+        mediaConfigured: Boolean(data.mediaConfigured),
+      });
     } catch {
-      setSession({ loading: false, configured: false, authenticated: false });
+      setSession({ loading: false, configured: false, authenticated: false, mediaConfigured: false });
       setError('无法读取工作室配置。');
     }
   };
@@ -102,6 +132,88 @@ export default function YinheVideoStudio() {
     };
   }, [taskId, taskIsFinal]);
 
+  const uploadImage = async (file) => {
+    if (!session.mediaConfigured) {
+      throw new Error('图片存储尚未配置。');
+    }
+
+    setUploadingCount((count) => count + 1);
+    try {
+      const capabilityResponse = await fetch('/api/yinhe/media/uploads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: file.name, type: file.type, size: file.size }),
+      });
+      const capability = await capabilityResponse.json();
+      if (!capabilityResponse.ok) throw new Error(capability.error || '无法创建图片上传。');
+
+      const uploadResponse = await fetch(capability.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      const uploadResult = await uploadResponse.json().catch(() => ({}));
+      if (!uploadResponse.ok || uploadResult.mediaId !== capability.mediaId) {
+        throw new Error(uploadResult.error || '图片上传失败。');
+      }
+      return {
+        mediaId: capability.mediaId,
+        name: file.name,
+        previewUrl: URL.createObjectURL(file),
+      };
+    } finally {
+      setUploadingCount((count) => Math.max(0, count - 1));
+    }
+  };
+
+  const handleReferenceFiles = async (files) => {
+    const capacity = MAX_REFERENCE_IMAGES - referenceImages.length;
+    if (capacity < 1) {
+      setError(`最多只能上传 ${MAX_REFERENCE_IMAGES} 张参考图。`);
+      return;
+    }
+
+    setError('');
+    for (const file of files.slice(0, capacity)) {
+      try {
+        const asset = await uploadImage(file);
+        setReferenceImages((current) => [...current, asset]);
+      } catch (uploadError) {
+        setError(uploadError.message);
+        break;
+      }
+    }
+  };
+
+  const handleFrameFile = async (file, frame) => {
+    if (!file) return;
+    setError('');
+    try {
+      const asset = await uploadImage(file);
+      if (frame === 'start') {
+        setStartFrame((current) => {
+          if (current) URL.revokeObjectURL(current.previewUrl);
+          return asset;
+        });
+      } else {
+        setEndFrame((current) => {
+          if (current) URL.revokeObjectURL(current.previewUrl);
+          return asset;
+        });
+      }
+    } catch (uploadError) {
+      setError(uploadError.message);
+    }
+  };
+
+  const removeReference = (mediaId) => {
+    setReferenceImages((current) => {
+      const asset = current.find((item) => item.mediaId === mediaId);
+      if (asset) URL.revokeObjectURL(asset.previewUrl);
+      return current.filter((item) => item.mediaId !== mediaId);
+    });
+  };
+
   const handleLogin = async (event) => {
     event.preventDefault();
     if (!accessToken.trim()) return;
@@ -132,10 +244,14 @@ export default function YinheVideoStudio() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (mediaMode === 'frames' && (!startFrame || !endFrame)) {
+      setError('首帧和尾帧必须同时上传。');
+      return;
+    }
+
     setBusy(true);
     setError('');
     setTask(null);
-
     try {
       const response = await fetch('/api/yinhe/videos', {
         method: 'POST',
@@ -148,6 +264,9 @@ export default function YinheVideoStudio() {
           durationSeconds: Number(form.durationSeconds),
           audio: form.audio,
           name: form.name,
+          referenceMediaIds: mediaMode === 'reference' ? referenceImages.map((asset) => asset.mediaId) : [],
+          startMediaId: mediaMode === 'frames' ? startFrame?.mediaId || '' : '',
+          endMediaId: mediaMode === 'frames' ? endFrame?.mediaId || '' : '',
         }),
       });
       const data = await response.json();
@@ -183,25 +302,12 @@ export default function YinheVideoStudio() {
           <div className="mb-8">
             <p className="text-xs uppercase tracking-[0.3em] text-cyan-300/75">Private generation workspace</p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight">Seedance Studio</h1>
-            <p className="mt-3 text-sm leading-6 text-white/55">输入工作室访问口令。Provider API Key 只保存在 Vercel 服务端，不会发送到浏览器。</p>
+            <p className="mt-3 text-sm leading-6 text-white/55">输入工作室访问口令。Provider API Key 与图片签名密钥只保存在服务端，不会发送到浏览器。</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
-            <input
-              type="password"
-              value={accessToken}
-              onChange={(event) => setAccessToken(event.target.value)}
-              placeholder="工作室访问口令"
-              autoComplete="current-password"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/50"
-            />
+            <input type="password" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder="工作室访问口令" autoComplete="current-password" className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/50" />
             {error && <p className="text-sm text-rose-300">{error}</p>}
-            <button
-              type="submit"
-              disabled={loginBusy || !accessToken.trim()}
-              className="w-full rounded-xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {loginBusy ? '验证中…' : '进入工作室'}
-            </button>
+            <button type="submit" disabled={loginBusy || !accessToken.trim()} className="w-full rounded-xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">{loginBusy ? '验证中…' : '进入工作室'}</button>
           </form>
         </div>
       </div>
@@ -248,15 +354,46 @@ export default function YinheVideoStudio() {
 
             <label className="mt-5 flex items-center gap-3 text-sm text-white/65"><input type="checkbox" checked={form.audio} onChange={(event) => updateForm('audio', event.target.checked)} className="h-4 w-4 accent-cyan-300" />生成同步音频</label>
 
-            <div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[0.04] px-4 py-3">
-              <p className="text-xs font-medium text-amber-100">安全限制：当前仅支持文生视频</p>
-              <p className="mt-1 text-[11px] leading-5 text-white/40">为避免远程素材 URL 被 Provider 用于访问内网，参考图片、首尾帧和其他远程素材输入暂未开放。后续接入受控媒体存储后再启用。</p>
-            </div>
+            <section className="mt-6 border-t border-white/10 pt-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-white/75">图片引导</p>
+                  <p className="mt-1 text-[11px] leading-5 text-white/35">仅接受本工作室上传的 JPG、PNG、WebP（单张最大 10 MiB）。素材临时保存 7 天，并通过短时签名 URL 提供给模型。</p>
+                </div>
+                <span className={`rounded-full border px-2.5 py-1 text-[10px] ${session.mediaConfigured ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-200' : 'border-amber-300/20 bg-amber-300/10 text-amber-200'}`}>{session.mediaConfigured ? '安全存储已连接' : '图片存储未配置'}</span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 rounded-xl border border-white/10 bg-black/20 p-1 text-xs">
+                <button type="button" onClick={() => setMediaMode('reference')} className={`rounded-lg px-3 py-2 transition ${mediaMode === 'reference' ? 'bg-cyan-300 text-black' : 'text-white/45 hover:text-white'}`}>参考图模式</button>
+                <button type="button" onClick={() => setMediaMode('frames')} className={`rounded-lg px-3 py-2 transition ${mediaMode === 'frames' ? 'bg-cyan-300 text-black' : 'text-white/45 hover:text-white'}`}>首帧 / 尾帧</button>
+              </div>
+
+              {mediaMode === 'reference' ? (
+                <div className="mt-4">
+                  <div className="mb-3 flex items-center justify-between text-xs text-white/45"><span>最多 {MAX_REFERENCE_IMAGES} 张，提示词可用 @image1、@image2… 引用。</span><span>{referenceImages.length}/{MAX_REFERENCE_IMAGES}</span></div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {referenceImages.map((asset) => <MediaTile key={asset.mediaId} asset={asset} label="参考图" onRemove={() => removeReference(asset.mediaId)} />)}
+                    {referenceImages.length < MAX_REFERENCE_IMAGES && (
+                      <label className={`flex aspect-[4/3] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-cyan-300/25 bg-cyan-300/[0.035] px-3 text-center transition hover:border-cyan-300/55 hover:bg-cyan-300/[0.08] ${!session.mediaConfigured || isUploading ? 'pointer-events-none opacity-45' : ''}`}>
+                        <span className="text-xl text-cyan-200">＋</span><span className="mt-1 text-[11px] text-cyan-100/70">{isUploading ? '上传中…' : '上传参考图'}</span>
+                        <input type="file" accept={IMAGE_ACCEPT} multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; handleReferenceFiles(files); }} />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div><p className="mb-2 text-xs text-white/45">首帧图</p><MediaTile asset={startFrame} label="首帧图" onRemove={() => setStartFrame((current) => { if (current) URL.revokeObjectURL(current.previewUrl); return null; })} /><label className={`mt-3 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-cyan-300/25 px-3 py-2 text-xs text-cyan-100/70 transition hover:border-cyan-300/55 ${!session.mediaConfigured || isUploading ? 'pointer-events-none opacity-45' : ''}`}>{isUploading ? '上传中…' : '上传 / 替换首帧'}<input type="file" accept={IMAGE_ACCEPT} className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; handleFrameFile(file, 'start'); }} /></label></div>
+                  <div><p className="mb-2 text-xs text-white/45">尾帧图</p><MediaTile asset={endFrame} label="尾帧图" onRemove={() => setEndFrame((current) => { if (current) URL.revokeObjectURL(current.previewUrl); return null; })} /><label className={`mt-3 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-cyan-300/25 px-3 py-2 text-xs text-cyan-100/70 transition hover:border-cyan-300/55 ${!session.mediaConfigured || isUploading ? 'pointer-events-none opacity-45' : ''}`}>{isUploading ? '上传中…' : '上传 / 替换尾帧'}<input type="file" accept={IMAGE_ACCEPT} className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; handleFrameFile(file, 'end'); }} /></label></div>
+                  <p className="sm:col-span-2 text-[11px] leading-5 text-white/35">首尾帧模式会控制视频的起始与结束画面；两张图必须同时上传，且不能与参考图模式混用。</p>
+                </div>
+              )}
+            </section>
 
             <label className="mt-5 block text-xs text-white/45">任务名称（可选）<input value={form.name} onChange={(event) => updateForm('name', event.target.value)} placeholder="我的测试片段" className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-cyan-300/50" /></label>
 
             {error && <div className="mt-5 rounded-xl border border-rose-300/20 bg-rose-300/5 px-4 py-3 text-sm text-rose-200">{error}</div>}
-            <button type="submit" disabled={busy || !form.input.trim()} className="mt-7 w-full rounded-xl bg-cyan-300 px-5 py-3.5 text-sm font-semibold text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">{busy ? '提交中…' : '开始生成'}</button>
+            <button type="submit" disabled={busy || isUploading || !form.input.trim()} className="mt-7 w-full rounded-xl bg-cyan-300 px-5 py-3.5 text-sm font-semibold text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">{busy ? '提交中…' : isUploading ? '图片上传中…' : '开始生成'}</button>
             <p className="mt-3 text-center text-[11px] text-white/25">费用按分辨率与时长计算；画幅比例不影响价格。</p>
           </form>
 

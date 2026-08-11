@@ -1,0 +1,11 @@
+name = "open-generative-ai-media"
+main = "src/index.js"
+compatibility_date = "2026-08-11"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "YINHE_MEDIA_KV"
+id = "b84ccc53fc86438a847936e06be9e8cf"
+
+[vars]
+ALLOWED_ORIGIN = "https://open-generative-ai-beige.vercel.app"
