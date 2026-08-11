@@ -20,17 +20,7 @@ const initialForm = {
   durationSeconds: 5,
   audio: true,
   name: '',
-  references: '',
-  startImageUrl: '',
-  endImageUrl: '',
 };
-
-function parseReferences(value) {
-  return value
-    .split('\n')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
 
 function readableStatus(status) {
   const labels = {
@@ -158,9 +148,6 @@ export default function YinheVideoStudio() {
           durationSeconds: Number(form.durationSeconds),
           audio: form.audio,
           name: form.name,
-          referenceImages: parseReferences(form.references),
-          startImageUrl: form.startImageUrl,
-          endImageUrl: form.endImageUrl,
         }),
       });
       const data = await response.json();
@@ -261,15 +248,9 @@ export default function YinheVideoStudio() {
 
             <label className="mt-5 flex items-center gap-3 text-sm text-white/65"><input type="checkbox" checked={form.audio} onChange={(event) => updateForm('audio', event.target.checked)} className="h-4 w-4 accent-cyan-300" />生成同步音频</label>
 
-            <div className="mt-6 border-t border-white/10 pt-6">
-              <p className="text-xs font-medium text-white/65">参考素材（可选）</p>
-              <p className="mt-1 text-[11px] leading-5 text-white/35">每行一个公网 http(s) URL；图片、声音、视频由 Provider 拉取。</p>
-              <textarea value={form.references} onChange={(event) => updateForm('references', event.target.value)} rows={3} placeholder="https://cdn.example.com/reference.jpg" className="mt-3 w-full resize-y rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-cyan-300/50" />
-            </div>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="text-xs text-white/45">首帧 URL（与尾帧一起填写）<input value={form.startImageUrl} onChange={(event) => updateForm('startImageUrl', event.target.value)} placeholder="https://…/start.png" className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-cyan-300/50" /></label>
-              <label className="text-xs text-white/45">尾帧 URL<input value={form.endImageUrl} onChange={(event) => updateForm('endImageUrl', event.target.value)} placeholder="https://…/end.png" className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-cyan-300/50" /></label>
+            <div className="mt-6 rounded-xl border border-amber-300/15 bg-amber-300/[0.04] px-4 py-3">
+              <p className="text-xs font-medium text-amber-100">安全限制：当前仅支持文生视频</p>
+              <p className="mt-1 text-[11px] leading-5 text-white/40">为避免远程素材 URL 被 Provider 用于访问内网，参考图片、首尾帧和其他远程素材输入暂未开放。后续接入受控媒体存储后再启用。</p>
             </div>
 
             <label className="mt-5 block text-xs text-white/45">任务名称（可选）<input value={form.name} onChange={(event) => updateForm('name', event.target.value)} placeholder="我的测试片段" className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-cyan-300/50" /></label>
