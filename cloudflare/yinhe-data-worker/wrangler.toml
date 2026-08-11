@@ -1,0 +1,17 @@
+name = "open-generative-ai-data"
+main = "src/index.js"
+compatibility_date = "2026-08-11"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "open-generative-ai-db"
+database_id = "3088a278-7b6b-4d9c-9c9a-c91a51d35d91"
+
+[[r2_buckets]]
+binding = "VIDEOS"
+bucket_name = "open-generative-ai-videos"
+
+[vars]
+DEFAULT_CREDITS = "0"
+ADMIN_EMAILS = "ganwugeliuyanji@gmail.com"

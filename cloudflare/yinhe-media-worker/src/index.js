@@ -3,9 +3,11 @@ const MEDIA_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MAX_CAPABILITY_WINDOW_SECONDS = 60 * 60;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MEDIA_ID_PATTERN = /^media_[a-f0-9]{32}$/;
+const OWNER_PATTERN = /^[a-f0-9]{32}$/;
+const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 
-function capabilityPayload({ method, mediaId, type = '', size = '', expiresAt }) {
-  return [method, mediaId, type, String(size), String(expiresAt)].join('\n');
+function capabilityPayload({ method, mediaId, owner = '', type = '', size = '', expiresAt }) {
+  return [method, mediaId, owner, type, String(size), String(expiresAt)].join('\n');
 }
 
 function decodeBase64Url(value) {
@@ -69,49 +71,103 @@ function parseExpires(value) {
   return expiresAt;
 }
 
+function isExpectedImage(content, type) {
+  const bytes = new Uint8Array(content);
+  if (type === 'image/png') {
+    return bytes.length >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((value, index) => bytes[index] === value);
+  }
+  if (type === 'image/jpeg') {
+    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  return bytes.length >= 12
+    && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+}
+
+async function readExactBody(body, expectedSize) {
+  if (!body) throw new Error('Missing upload body.');
+
+  const reader = body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > expectedSize || total > MAX_IMAGE_BYTES) {
+        await reader.cancel();
+        throw new Error('Upload exceeds the approved size.');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (total !== expectedSize) throw new Error('Uploaded size does not match the approved file.');
+
+  const content = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    content.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return content.buffer;
+}
+
 async function putMedia(request, env, url, mediaId) {
   if (!isAllowedOrigin(request, env)) return json(request, env, { error: 'Origin is not allowed.' }, 403);
 
+  const owner = url.searchParams.get('owner') || '';
   const type = url.searchParams.get('type') || '';
   const size = Number(url.searchParams.get('size'));
   const expiresAt = parseExpires(url.searchParams.get('expires'));
   const signature = url.searchParams.get('sig');
+  const contentLength = request.headers.get('Content-Length');
   if (
     !MEDIA_ID_PATTERN.test(mediaId)
+    || !OWNER_PATTERN.test(owner)
     || !IMAGE_TYPES.has(type)
     || !Number.isSafeInteger(size)
     || size < 1
     || size > MAX_IMAGE_BYTES
     || !expiresAt
     || request.headers.get('Content-Type') !== type
+    || (contentLength && (!/^\d+$/.test(contentLength) || Number(contentLength) !== size))
   ) {
     return json(request, env, { error: 'Invalid upload capability.' }, 400);
   }
-  const valid = await verifyCapability({ method: 'PUT', mediaId, type, size, expiresAt }, signature, env.AIGC_MEDIA_SIGNING_SECRET);
+  const valid = await verifyCapability({ method: 'PUT', mediaId, owner, type, size, expiresAt }, signature, env.AIGC_MEDIA_SIGNING_SECRET);
   if (!valid) return json(request, env, { error: 'Invalid upload capability.' }, 403);
 
-  const content = await request.arrayBuffer();
-  if (content.byteLength !== size) {
-    return json(request, env, { error: 'Uploaded size does not match the approved file.' }, 400);
+  let content;
+  try {
+    content = await readExactBody(request.body, size);
+  } catch (error) {
+    return json(request, env, { error: error.message || 'Invalid upload body.' }, 400);
+  }
+  if (!isExpectedImage(content, type)) {
+    return json(request, env, { error: 'Uploaded bytes do not match the declared image type.' }, 400);
   }
   await env.YINHE_MEDIA_KV.put(mediaId, content, {
     expirationTtl: MEDIA_TTL_SECONDS,
-    metadata: { contentType: type },
+    metadata: { contentType: type, owner },
   });
   return json(request, env, { mediaId }, 201);
 }
 
 async function getMedia(request, env, url, mediaId) {
+  const owner = url.searchParams.get('owner') || '';
   const expiresAt = parseExpires(url.searchParams.get('expires'));
   const signature = url.searchParams.get('sig');
-  if (!MEDIA_ID_PATTERN.test(mediaId) || !expiresAt) {
+  if (!MEDIA_ID_PATTERN.test(mediaId) || !OWNER_PATTERN.test(owner) || !expiresAt) {
     return new Response('Not found.', { status: 404 });
   }
-  const valid = await verifyCapability({ method: request.method, mediaId, expiresAt }, signature, env.AIGC_MEDIA_SIGNING_SECRET);
+  const valid = await verifyCapability({ method: request.method, mediaId, owner, expiresAt }, signature, env.AIGC_MEDIA_SIGNING_SECRET);
   if (!valid) return new Response('Not found.', { status: 404 });
 
   const { value, metadata } = await env.YINHE_MEDIA_KV.getWithMetadata(mediaId, 'arrayBuffer');
-  if (!value || !IMAGE_TYPES.has(metadata?.contentType)) {
+  if (!value || !IMAGE_TYPES.has(metadata?.contentType) || metadata?.owner !== owner) {
     return new Response('Not found.', { status: 404 });
   }
   return new Response(request.method === 'HEAD' ? null : value, {

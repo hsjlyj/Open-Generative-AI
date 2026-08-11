@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
+import YinheAccountDashboard from './YinheAccountDashboard';
 
 const MODELS = [
   { id: 'cheap-seedance-2.0', label: 'Seedance 2.0', hint: '标准质量' },
@@ -9,7 +10,7 @@ const MODELS = [
   { id: 'cheap-seedance-2.0-mini', label: 'Seedance 2.0 Mini', hint: '轻量经济' },
 ];
 
-const FINAL_STATUSES = new Set(['SUCCESS', 'FAILED', 'CANCELLED']);
+const FINAL_STATUSES = new Set(['SUCCESS', 'completed', 'succeeded', 'success', 'FAILED', 'CANCELLED']);
 const ASPECT_RATIOS = ['9:16', '16:9', '1:1', '4:3', '3:4', '21:9'];
 const RESOLUTIONS = ['480p', '720p', '1080p', '4K'];
 const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
@@ -59,7 +60,9 @@ function MediaTile({ asset, label, onRemove }) {
 
 export default function YinheVideoStudio() {
   const [session, setSession] = useState({ loading: true, configured: false, authenticated: false, mediaConfigured: false });
+  const [accessEmail, setAccessEmail] = useState('');
   const [accessToken, setAccessToken] = useState('');
+  const [authMode, setAuthMode] = useState('login');
   const [loginBusy, setLoginBusy] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [mediaMode, setMediaMode] = useState('reference');
@@ -92,6 +95,7 @@ export default function YinheVideoStudio() {
         configured: Boolean(data.configured),
         authenticated: Boolean(data.authenticated),
         mediaConfigured: Boolean(data.mediaConfigured),
+        user: data.user || null,
       });
     } catch {
       setSession({ loading: false, configured: false, authenticated: false, mediaConfigured: false });
@@ -216,19 +220,19 @@ export default function YinheVideoStudio() {
 
   const handleLogin = async (event) => {
     event.preventDefault();
-    if (!accessToken.trim()) return;
+    if (!accessEmail.trim() || !accessToken) return;
     setLoginBusy(true);
     setError('');
     try {
       const response = await fetch('/api/yinhe/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: accessToken.trim() }),
+        body: JSON.stringify({ mode: authMode, email: accessEmail.trim(), password: accessToken }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '访问口令无效。');
       setAccessToken('');
-      setSession((current) => ({ ...current, authenticated: true }));
+      setSession((current) => ({ ...current, authenticated: true, user: data.user }));
     } catch (loginError) {
       setError(loginError.message);
     } finally {
@@ -302,12 +306,14 @@ export default function YinheVideoStudio() {
           <div className="mb-8">
             <p className="text-xs uppercase tracking-[0.3em] text-cyan-300/75">Private generation workspace</p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight">Seedance Studio</h1>
-            <p className="mt-3 text-sm leading-6 text-white/55">输入工作室访问口令。Provider API Key 与图片签名密钥只保存在服务端，不会发送到浏览器。</p>
+            <p className="mt-3 text-sm leading-6 text-white/55">注册或登录后即可使用工作室。账户额度由管理员统一管理。</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
-            <input type="password" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder="工作室访问口令" autoComplete="current-password" className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/50" />
+            <input type="email" value={accessEmail} onChange={(event) => setAccessEmail(event.target.value)} placeholder="邮箱" autoComplete="email" className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/50" />
+            <input type="password" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder="密码（至少 8 位）" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/50" />
             {error && <p className="text-sm text-rose-300">{error}</p>}
-            <button type="submit" disabled={loginBusy || !accessToken.trim()} className="w-full rounded-xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">{loginBusy ? '验证中…' : '进入工作室'}</button>
+            <button type="submit" disabled={loginBusy || !accessEmail.trim() || !accessToken} className="w-full rounded-xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">{loginBusy ? '处理中…' : authMode === 'login' ? '登录' : '注册并进入工作室'}</button>
+            <button type="button" onClick={() => setAuthMode((current) => current === 'login' ? 'register' : 'login')} className="w-full text-xs text-cyan-200">{authMode === 'login' ? '没有账号？注册' : '已有账号？登录'}</button>
           </form>
         </div>
       </div>
@@ -327,6 +333,7 @@ export default function YinheVideoStudio() {
           <button onClick={handleLogout} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-white/50 transition hover:border-white/25 hover:text-white">退出</button>
         </header>
 
+        <YinheAccountDashboard session={session} onCreate={() => document.querySelector('main form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
           <form onSubmit={handleSubmit} className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-2xl shadow-black/30 sm:p-7">
             <div className="mb-6 flex items-start justify-between gap-4">

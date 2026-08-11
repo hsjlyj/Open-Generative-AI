@@ -12,6 +12,8 @@ const DesignAgentStudio = dynamic(() => import('studio').then(mod => mod.DesignA
 import axios from 'axios';
 import ApiKeyModal from './ApiKeyModal';
 
+const EMPTY_SLUG = [];
+
 const TABS = [
   {
     id: 'image',
@@ -271,7 +273,7 @@ const persistNotifications = (notifications) => {
 export default function StandaloneShell() {
   const params = useParams();
   const router = useRouter();
-  const slug = params?.slug || []; 
+  const slug = params?.slug || EMPTY_SLUG;
   const idFromParams = params?.id;
   const tabFromParams = params?.tab;
 
