@@ -35,7 +35,7 @@ async function action(request, env, input) {
       return { user };
     }
     case 'profile': return { user: await userById(DB, input.userId) };
-    case 'prices': return { prices: (await DB.prepare('SELECT model, credits_per_second, updated_at FROM model_prices ORDER BY model').all()).results };
+    case 'prices': return { prices: (await DB.prepare('SELECT model, resolution, credits_per_second, updated_at FROM model_prices ORDER BY model, resolution').all()).results };
     case 'history': {
       const rows = await DB.prepare('SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT 100').bind(input.userId).all();
       return { tasks: rows.results.map((task) => taskView(task, request)) };
@@ -43,8 +43,8 @@ async function action(request, env, input) {
     case 'reserve': {
       const { task, userId } = input;
       if (!task || !MODELS.has(task.model) || !Number.isInteger(task.durationSeconds) || task.durationSeconds < 4 || task.durationSeconds > 15) throw new Error('Invalid generation request.');
-      const price = await DB.prepare('SELECT credits_per_second FROM model_prices WHERE model = ?').bind(task.model).first();
-      if (!price) throw new Error('Model pricing is unavailable.');
+      const price = await DB.prepare('SELECT credits_per_second FROM model_prices WHERE model = ? AND resolution = ?').bind(task.model, task.resolution).first();
+      if (!price) throw new Error(`Model pricing is unavailable for ${task.model} at ${task.resolution}.`);
       const cost = price.credits_per_second * task.durationSeconds;
       const update = await DB.prepare('UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ?').bind(cost, userId, cost).run();
       if (!update.meta.changes) return { error: '额度不足，无法提交生成任务。', status: 402 };
@@ -82,7 +82,7 @@ async function action(request, env, input) {
     }
     case 'adminUsers': { await requireAdmin(DB, input.userId); return { users: (await DB.prepare('SELECT id,email,role,credits,created_at FROM users ORDER BY created_at DESC LIMIT 200').all()).results }; }
     case 'adminAdjustCredits': { await requireAdmin(DB, input.userId); const amount = Number(input.amount); if (!Number.isInteger(amount) || !input.targetUserId) throw new Error('Invalid credit adjustment.'); await DB.batch([DB.prepare('UPDATE users SET credits = MAX(0, credits + ?) WHERE id = ?').bind(amount, input.targetUserId), DB.prepare('INSERT INTO credit_ledger (id,user_id,amount,reason) VALUES (?,?,?,?)').bind(uuid(), input.targetUserId, amount, 'admin_adjustment')]); return { user: await userById(DB, input.targetUserId) }; }
-    case 'adminSetPrice': { await requireAdmin(DB, input.userId); if (!MODELS.has(input.model) || !Number.isInteger(input.creditsPerSecond) || input.creditsPerSecond < 0) throw new Error('Invalid price.'); await DB.prepare('UPDATE model_prices SET credits_per_second=?, updated_at=CURRENT_TIMESTAMP WHERE model=?').bind(input.creditsPerSecond, input.model).run(); return { prices: (await DB.prepare('SELECT model,credits_per_second,updated_at FROM model_prices ORDER BY model').all()).results }; }
+    case 'adminSetPrice': { await requireAdmin(DB, input.userId); if (!MODELS.has(input.model) || !Number.isInteger(input.creditsPerSecond) || input.creditsPerSecond < 0 || typeof input.resolution !== 'string' || !input.resolution) throw new Error('Invalid price.'); await DB.prepare('INSERT INTO model_prices (model, resolution, credits_per_second) VALUES (?, ?, ?) ON CONFLICT(model, resolution) DO UPDATE SET credits_per_second = excluded.credits_per_second, updated_at = CURRENT_TIMESTAMP').bind(input.model, input.resolution, input.creditsPerSecond).run(); return { prices: (await DB.prepare('SELECT model,resolution,credits_per_second,updated_at FROM model_prices ORDER BY model, resolution').all()).results }; }
     default: return { error: 'Unknown action.', status: 400 };
   }
 }

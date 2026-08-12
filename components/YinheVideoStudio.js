@@ -73,6 +73,7 @@ export default function YinheVideoStudio() {
   const [task, setTask] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [priceMap, setPriceMap] = useState({});
 
   const selectedModel = useMemo(
     () => MODELS.find((model) => model.id === form.model) || MODELS[0],
@@ -81,6 +82,17 @@ export default function YinheVideoStudio() {
   const taskId = task?.taskId;
   const taskIsFinal = Boolean(task?.status && FINAL_STATUSES.has(task.status));
   const isUploading = uploadingCount > 0;
+  const priceKey = `${form.model}::${form.resolution}`;
+  const pricePerSecond = priceMap[priceKey];
+  const estimatedCost = useMemo(() => {
+    const seconds = Number(form.durationSeconds);
+    if (!Number.isInteger(seconds) || seconds < 4 || seconds > 15) return null;
+    if (typeof pricePerSecond !== 'number') return null;
+    return pricePerSecond * seconds;
+  }, [form.durationSeconds, pricePerSecond]);
+  const costHint = typeof estimatedCost === 'number'
+    ? `预计消耗 ${estimatedCost} 积分（${form.durationSeconds} 秒 × ${pricePerSecond}/秒）`
+    : '该分辨率尚未配置价格，提交将被拒绝；请联系管理员。';
 
   const updateForm = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -97,6 +109,17 @@ export default function YinheVideoStudio() {
         mediaConfigured: Boolean(data.mediaConfigured),
         user: data.user || null,
       });
+      if (data.authenticated) {
+        try {
+          const adminResponse = await fetch('/api/yinhe/admin', { cache: 'no-store' });
+          if (adminResponse.ok) {
+            const adminData = await adminResponse.json();
+            const next = {};
+            (adminData.prices || []).forEach((entry) => { next[`${entry.model}::${entry.resolution}`] = Number(entry.credits_per_second); });
+            setPriceMap(next);
+          }
+        } catch {}
+      }
     } catch {
       setSession({ loading: false, configured: false, authenticated: false, mediaConfigured: false });
       setError('无法读取工作室配置。');
@@ -401,7 +424,7 @@ export default function YinheVideoStudio() {
 
             {error && <div className="mt-5 rounded-xl border border-rose-300/20 bg-rose-300/5 px-4 py-3 text-sm text-rose-200">{error}</div>}
             <button type="submit" disabled={busy || isUploading || !form.input.trim()} className="mt-7 w-full rounded-xl bg-cyan-300 px-5 py-3.5 text-sm font-semibold text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">{busy ? '提交中…' : isUploading ? '图片上传中…' : '开始生成'}</button>
-            <p className="mt-3 text-center text-[11px] text-white/25">费用按分辨率与时长计算；画幅比例不影响价格。</p>
+            <p className="mt-3 text-center text-[11px] text-white/25">{costHint}</p>
           </form>
 
           <section className="rounded-3xl border border-white/10 bg-white/[0.025] p-5 sm:p-7">

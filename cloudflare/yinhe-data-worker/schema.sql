@@ -9,16 +9,25 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+DROP TABLE IF EXISTS model_prices;
 CREATE TABLE IF NOT EXISTS model_prices (
-  model TEXT PRIMARY KEY,
+  model TEXT NOT NULL,
+  resolution TEXT NOT NULL,
   credits_per_second INTEGER NOT NULL CHECK (credits_per_second >= 0),
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (model, resolution)
 );
 
-INSERT OR IGNORE INTO model_prices (model, credits_per_second) VALUES
-  ('cheap-seedance-2.0', 5),
-  ('cheap-seedance-2.0-fast', 4),
-  ('cheap-seedance-2.0-mini', 2);
+-- Pricing matrix: prices are in credits per second; 1 credit = 0.1 CNY.
+-- Resolution defaults only cover 480p and 720p; other resolutions must be set
+-- by an admin before users can submit (reserve will reject unpriced combos).
+INSERT OR IGNORE INTO model_prices (model, resolution, credits_per_second) VALUES
+  ('cheap-seedance-2.0',       '480p', 4),
+  ('cheap-seedance-2.0',       '720p', 8),
+  ('cheap-seedance-2.0-fast',  '480p', 3),
+  ('cheap-seedance-2.0-fast',  '720p', 6),
+  ('cheap-seedance-2.0-mini',  '480p', 2),
+  ('cheap-seedance-2.0-mini',  '720p', 3);
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
