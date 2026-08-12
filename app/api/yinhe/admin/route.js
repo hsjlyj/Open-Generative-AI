@@ -13,7 +13,8 @@ export async function POST(request) {
     const action = body.action === 'adjustCredits' ? 'adminAdjustCredits' : body.action === 'setPrice' ? 'adminSetPrice' : null;
     console.log('[yinhe/admin POST]', JSON.stringify({ caller: account.id, role: account.role, action, body }));
     if (!action) return NextResponse.json({ error: '无效管理操作。' }, { status: 400 });
-    const result = await dataRequest(action, { ...body, userId: account.id });
+    const { action: _ignored, ...forwardBody } = body;
+    const result = await dataRequest(action, { ...forwardBody, userId: account.id });
     console.log('[yinhe/admin POST result]', JSON.stringify({ action, ok: !result.error, keys: Object.keys(result || {}) }));
     return NextResponse.json(result);
   }
