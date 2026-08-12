@@ -1,4 +1,4 @@
-const MODELS = new Set(['cheap-seedance-2.0', 'cheap-seedance-2.0-fast', 'cheap-seedance-2.0-mini']);
+const MODELS = new Set(['cheap-seedance-2.0', 'cheap-seedance-2.0-fast', 'doubao-seedance-2.0-mini']);
 const TASK_STATUSES = new Set(['PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED']);
 
 function json(body, status = 200) {

@@ -26,8 +26,8 @@ INSERT OR IGNORE INTO model_prices (model, resolution, credits_per_second) VALUE
   ('cheap-seedance-2.0',       '720p', 8),
   ('cheap-seedance-2.0-fast',  '480p', 3),
   ('cheap-seedance-2.0-fast',  '720p', 6),
-  ('cheap-seedance-2.0-mini',  '480p', 2),
-  ('cheap-seedance-2.0-mini',  '720p', 3);
+  ('doubao-seedance-2.0-mini',  '480p', 2),
+  ('doubao-seedance-2.0-mini',  '720p', 3);
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,

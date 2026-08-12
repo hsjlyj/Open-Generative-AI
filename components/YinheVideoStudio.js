@@ -7,7 +7,7 @@ import YinheAccountDashboard from './YinheAccountDashboard';
 const MODELS = [
   { id: 'cheap-seedance-2.0', label: 'Seedance 2.0', hint: '标准质量' },
   { id: 'cheap-seedance-2.0-fast', label: 'Seedance 2.0 Fast', hint: '更快迭代' },
-  { id: 'cheap-seedance-2.0-mini', label: 'Seedance 2.0 Mini', hint: '轻量经济' },
+  { id: 'doubao-seedance-2.0-mini', label: 'Seedance 2.0 Mini', hint: '轻量经济' },
 ];
 
 const FINAL_STATUSES = new Set(['SUCCESS', 'completed', 'succeeded', 'success', 'FAILED', 'CANCELLED']);
