@@ -111,11 +111,11 @@ export default function YinheVideoStudio() {
       });
       if (data.authenticated) {
         try {
-          const adminResponse = await fetch('/api/yinhe/admin', { cache: 'no-store' });
-          if (adminResponse.ok) {
-            const adminData = await adminResponse.json();
+          const pricesResponse = await fetch('/api/yinhe/prices', { cache: 'no-store' });
+          if (pricesResponse.ok) {
+            const pricesData = await pricesResponse.json();
             const next = {};
-            (adminData.prices || []).forEach((entry) => { next[`${entry.model}::${entry.resolution}`] = Number(entry.credits_per_second); });
+            (pricesData.prices || []).forEach((entry) => { next[`${entry.model}::${entry.resolution}`] = Number(entry.credits_per_second); });
             setPriceMap(next);
           }
         } catch {}
