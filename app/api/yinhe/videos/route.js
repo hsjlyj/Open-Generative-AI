@@ -21,13 +21,10 @@ export async function POST(request) {
   if (!settings) return NextResponse.json({ error: 'Provider configuration is unavailable.' }, { status: 503 });
   let normalized;
   try { normalized = normalizeVideoRequest(await request.json()); } catch (error) { return NextResponse.json({ error: error.message || 'Invalid video request.' }, { status: 400 }); }
-  console.log('[yinhe/videos POST] normalized', JSON.stringify({ model: normalized.model, duration_seconds: normalized.duration_seconds, typeof_dur: typeof normalized.duration_seconds, aspect_ratio: normalized.aspect_ratio, resolution: normalized.resolution }));
   const mediaSettings = getMediaSettings();
   try {
     await verifyUploadedMedia(requestedMediaIds(normalized), mediaSettings);
-    console.log('[yinhe/videos POST] calling reserve, task=', JSON.stringify(normalized));
     const reservation = await dataRequest('reserve', { userId: account.id, task: normalized });
-    console.log('[yinhe/videos POST] reserve result', JSON.stringify({ ok: !reservation.error, status: reservation.status, err: reservation.error, hasTask: !!reservation.task }));
     const payload = buildProviderVideoPayload(normalized, { createMediaReadUrl: (mediaId) => createMediaReadUrl(mediaId, mediaSettings) });
     let upstream; let result;
     try {
