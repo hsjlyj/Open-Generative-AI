@@ -102,11 +102,43 @@ export default function YinheVideoStudio() {
     try {
       const response = await fetch('/api/yinhe/session', { cache: 'no-store' });
       const data = await response.json();
+      
+      // 如果服务器端声称 media 已配置，做一次真实的浏览器健康检查
+      let actualMediaConfigured = Boolean(data.mediaConfigured);
+      if (actualMediaConfigured) {
+        try {
+          console.log('[健康检查] 测试浏览器能否访问 Worker...');
+          const testResponse = await fetch('/api/yinhe/media/uploads', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: 'health-check.png', type: 'image/png', size: 1024 }),
+          });
+          if (testResponse.ok) {
+            const testData = await testResponse.json();
+            // 尝试对 Worker 发起一个 HEAD 请求（最轻量）
+            const workerUrl = new URL(testData.uploadUrl).origin;
+            await fetch(workerUrl, { method: 'HEAD', mode: 'cors', signal: AbortSignal.timeout(3000) });
+            console.log('[健康检查] Worker 可访问 ✓');
+          } else {
+            actualMediaConfigured = false;
+            console.warn('[健康检查] 无法获取上传凭证');
+          }
+        } catch (healthError) {
+          actualMediaConfigured = false;
+          console.error('[健康检查] Worker 不可访问:', healthError);
+          if (!data.authenticated) {
+            // 如果用户未登录，这是预期的失败，不显示错误
+          } else {
+            setError('图片存储服务在您的网络环境下不可访问，图生视频功能将无法使用。');
+          }
+        }
+      }
+      
       setSession({
         loading: false,
         configured: Boolean(data.configured),
         authenticated: Boolean(data.authenticated),
-        mediaConfigured: Boolean(data.mediaConfigured),
+        mediaConfigured: actualMediaConfigured,
         user: data.user || null,
       });
       if (data.authenticated) {
