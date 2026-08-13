@@ -22,10 +22,14 @@ export async function POST(request) {
   let normalized;
   try { normalized = normalizeVideoRequest(await request.json()); } catch (error) { return NextResponse.json({ error: error.message || 'Invalid video request.' }, { status: 400 }); }
   const mediaSettings = getMediaSettings();
+  console.log('[videos/route] Media settings:', { hasSettings: !!mediaSettings, owner: account.id, mediaIds: requestedMediaIds(normalized) });
   try {
     await verifyUploadedMedia(requestedMediaIds(normalized), mediaSettings, account.id);
     const reservation = await dataRequest('reserve', { userId: account.id, task: normalized });
-    const payload = buildProviderVideoPayload(normalized, { createMediaReadUrl: (mediaId) => createMediaReadUrl(mediaId, mediaSettings, { owner: account.id }) });
+    const payload = buildProviderVideoPayload(normalized, { createMediaReadUrl: (mediaId) => {
+      console.log('[videos/route] Creating media read URL:', { mediaId, hasSettings: !!mediaSettings, owner: account.id });
+      return createMediaReadUrl(mediaId, mediaSettings, { owner: account.id });
+    } });
     let upstream; let result;
     try {
       upstream = await fetch(`${settings.baseUrl}/video/generation/tasks`, { method: 'POST', headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(payload), cache: 'no-store', signal: AbortSignal.timeout(30_000) });
