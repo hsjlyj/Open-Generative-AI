@@ -8,10 +8,10 @@ import { buildProviderVideoPayload, normalizeVideoRequest } from '@/lib/yinhe-vi
 
 export const runtime = 'nodejs';
 function requestedMediaIds(normalized) { return [...(normalized.referenceMediaIds || []), normalized.startMediaId, normalized.endMediaId].filter(Boolean); }
-async function verifyUploadedMedia(mediaIds, mediaSettings) {
+async function verifyUploadedMedia(mediaIds, mediaSettings, owner) {
   if (!mediaIds.length) return;
   if (!mediaSettings) throw new Error('图片存储尚未配置。');
-  const checks = await Promise.all(mediaIds.map(async (mediaId) => (await fetch(createMediaReadUrl(mediaId, mediaSettings, { method: 'HEAD', ttlSeconds: 60 }), { method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(10_000) })).ok));
+  const checks = await Promise.all(mediaIds.map(async (mediaId) => (await fetch(createMediaReadUrl(mediaId, mediaSettings, { owner, method: 'HEAD', ttlSeconds: 60 }), { method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(10_000) })).ok));
   if (checks.some((available) => !available)) throw new Error('一张或多张上传图片已失效，请重新上传。');
 }
 export async function POST(request) {
@@ -23,9 +23,9 @@ export async function POST(request) {
   try { normalized = normalizeVideoRequest(await request.json()); } catch (error) { return NextResponse.json({ error: error.message || 'Invalid video request.' }, { status: 400 }); }
   const mediaSettings = getMediaSettings();
   try {
-    await verifyUploadedMedia(requestedMediaIds(normalized), mediaSettings);
+    await verifyUploadedMedia(requestedMediaIds(normalized), mediaSettings, account.id);
     const reservation = await dataRequest('reserve', { userId: account.id, task: normalized });
-    const payload = buildProviderVideoPayload(normalized, { createMediaReadUrl: (mediaId) => createMediaReadUrl(mediaId, mediaSettings) });
+    const payload = buildProviderVideoPayload(normalized, { createMediaReadUrl: (mediaId) => createMediaReadUrl(mediaId, mediaSettings, { owner: account.id }) });
     let upstream; let result;
     try {
       upstream = await fetch(`${settings.baseUrl}/video/generation/tasks`, { method: 'POST', headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(payload), cache: 'no-store', signal: AbortSignal.timeout(30_000) });
