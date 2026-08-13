@@ -115,9 +115,9 @@ export default function YinheVideoStudio() {
           });
           if (testResponse.ok) {
             const testData = await testResponse.json();
-            // 尝试对 Worker 发起一个 HEAD 请求（最轻量）
-            const workerUrl = new URL(testData.uploadUrl).origin;
-            await fetch(workerUrl, { method: 'HEAD', mode: 'cors', signal: AbortSignal.timeout(3000) });
+            // 用下载 URL 做 HEAD 请求测试 Worker 可达性（Worker 支持 HEAD /media/{mediaId}）
+            const downloadUrl = testData.downloadUrl || testData.uploadUrl.replace('/upload/', '/media/');
+            await fetch(downloadUrl, { method: 'HEAD', mode: 'cors', signal: AbortSignal.timeout(3000) });
             console.log('[健康检查] Worker 可访问 ✓');
           } else {
             actualMediaConfigured = false;
