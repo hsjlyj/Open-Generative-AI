@@ -166,6 +166,7 @@ export default function YinheVideoStudio() {
 
     setUploadingCount((count) => count + 1);
     try {
+      console.log('[上传] 步骤 1: 请求上传凭证...', { name: file.name, type: file.type, size: file.size });
       const capabilityResponse = await fetch('/api/yinhe/media/uploads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -173,16 +174,26 @@ export default function YinheVideoStudio() {
       });
       const capability = await capabilityResponse.json();
       if (!capabilityResponse.ok) throw new Error(capability.error || '无法创建图片上传。');
+      console.log('[上传] 步骤 2: 收到上传凭证', { uploadUrl: capability.uploadUrl, mediaId: capability.mediaId });
 
+      console.log('[上传] 步骤 3: 上传图片到 Worker...', { url: capability.uploadUrl, size: file.size });
       const uploadResponse = await fetch(capability.uploadUrl, {
         method: 'PUT',
         headers: { 'Content-Type': file.type },
         body: file,
+      }).catch((fetchError) => {
+        console.error('[上传] 网络请求失败:', fetchError);
+        throw new Error(`网络请求失败: ${fetchError.message}。可能原因：1) Cloudflare Worker 不可访问 2) 浏览器 CORS 限制 3) 网络连接问题`);
       });
+      
+      console.log('[上传] 步骤 4: Worker 响应', { status: uploadResponse.status, ok: uploadResponse.ok });
       const uploadResult = await uploadResponse.json().catch(() => ({}));
       if (!uploadResponse.ok || uploadResult.mediaId !== capability.mediaId) {
-        throw new Error(uploadResult.error || '图片上传失败。');
+        console.error('[上传] 上传失败:', { status: uploadResponse.status, result: uploadResult });
+        throw new Error(uploadResult.error || `图片上传失败 (HTTP ${uploadResponse.status})。`);
       }
+      
+      console.log('[上传] 成功!', { mediaId: capability.mediaId });
       return {
         mediaId: capability.mediaId,
         name: file.name,
