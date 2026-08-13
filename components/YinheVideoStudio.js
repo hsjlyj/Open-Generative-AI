@@ -177,14 +177,39 @@ export default function YinheVideoStudio() {
       console.log('[上传] 步骤 2: 收到上传凭证', { uploadUrl: capability.uploadUrl, mediaId: capability.mediaId });
 
       console.log('[上传] 步骤 3: 上传图片到 Worker...', { url: capability.uploadUrl, size: file.size });
-      const uploadResponse = await fetch(capability.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      }).catch((fetchError) => {
-        console.error('[上传] 网络请求失败:', fetchError);
-        throw new Error(`网络请求失败: ${fetchError.message}。可能原因：1) Cloudflare Worker 不可访问 2) 浏览器 CORS 限制 3) 网络连接问题`);
-      });
+      
+      // 先测试 Worker 可达性（OPTIONS 预检）
+      let uploadResponse;
+      try {
+        const preflightResponse = await fetch(capability.uploadUrl, {
+          method: 'OPTIONS',
+          headers: {
+            'Origin': window.location.origin,
+            'Access-Control-Request-Method': 'PUT',
+            'Access-Control-Request-Headers': 'Content-Type',
+          },
+        });
+        console.log('[上传] OPTIONS 预检结果:', {
+          status: preflightResponse.status,
+          allowOrigin: preflightResponse.headers.get('access-control-allow-origin'),
+          allowMethods: preflightResponse.headers.get('access-control-allow-methods'),
+        });
+      } catch (preflightError) {
+        console.error('[上传] OPTIONS 预检失败 (Worker 不可达):', preflightError);
+        throw new Error(`无法连接到图片存储服务 (${new URL(capability.uploadUrl).hostname})。请检查：1) 网络连接 2) 防火墙/代理设置 3) DNS 解析`);
+      }
+      
+      // 实际上传
+      try {
+        uploadResponse = await fetch(capability.uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type },
+          body: file,
+        });
+      } catch (fetchError) {
+        console.error('[上传] PUT 请求失败:', fetchError);
+        throw new Error(`图片上传失败: ${fetchError.message}。Worker URL: ${capability.uploadUrl}`);
+      }
       
       console.log('[上传] 步骤 4: Worker 响应', { status: uploadResponse.status, ok: uploadResponse.ok });
       const uploadResult = await uploadResponse.json().catch(() => ({}));
