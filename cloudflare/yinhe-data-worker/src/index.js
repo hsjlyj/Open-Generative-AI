@@ -1,4 +1,4 @@
-const MODELS = new Set(['cheap-seedance-2.0', 'cheap-seedance-2.0-fast', 'doubao-seedance-2.0-mini']);
+const MODELS = new Set(['cheap-seedance-2.0', 'cheap-seedance-2.0-fast', 'cheap-seedance-2.0-mini', 'seedance-2.0-mini', 'seedance-2.0-fast']);
 const TASK_STATUSES = new Set(['PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED']);
 
 function json(body, status = 200) {
@@ -42,15 +42,15 @@ async function action(request, env, input) {
     }
     case 'reserve': {
       const { task, userId } = input;
-      if (!task || !MODELS.has(task.model) || !Number.isInteger(task.durationSeconds) || task.durationSeconds < 4 || task.durationSeconds > 15) throw new Error('Invalid generation request.');
+      if (!task || !MODELS.has(task.model) || !Number.isInteger(task.duration_seconds) || task.duration_seconds < 4 || task.duration_seconds > 15) throw new Error('Invalid generation request.');
       const price = await DB.prepare('SELECT credits_per_second FROM model_prices WHERE model = ? AND resolution = ?').bind(task.model, task.resolution).first();
       if (!price) throw new Error(`Model pricing is unavailable for ${task.model} at ${task.resolution}.`);
-      const cost = price.credits_per_second * task.durationSeconds;
+      const cost = price.credits_per_second * task.duration_seconds;
       const update = await DB.prepare('UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ?').bind(cost, userId, cost).run();
       if (!update.meta.changes) return { error: '额度不足，无法提交生成任务。', status: 402 };
       const id = uuid();
       await DB.batch([
-        DB.prepare('INSERT INTO tasks (id, user_id, model, prompt, aspect_ratio, resolution, duration_seconds, audio, name, credits_reserved) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(id, userId, task.model, task.input, task.aspectRatio, task.resolution, task.durationSeconds, task.audio ? 1 : 0, task.name || null, cost),
+        DB.prepare('INSERT INTO tasks (id, user_id, model, prompt, aspect_ratio, resolution, duration_seconds, audio, name, credits_reserved) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(id, userId, task.model, task.input, task.aspect_ratio, task.resolution, task.duration_seconds, task.audio ? 1 : 0, task.name || null, cost),
         DB.prepare('INSERT INTO credit_ledger (id, user_id, amount, reason, task_id) VALUES (?, ?, ?, ?, ?)').bind(uuid(), userId, -cost, 'generation_reservation', id),
       ]);
       return { task: await DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first(), user: await userById(DB, userId) };

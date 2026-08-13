@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyStudioSession } from '@/lib/yinhe-auth';
+import { getStudioSessionOwner, verifyStudioSession } from '@/lib/yinhe-auth';
 import { createMediaUploadCapability, getMediaSettings } from '@/lib/yinhe-media';
 import { getProviderSettings } from '@/lib/yinhe-provider';
 
@@ -23,8 +23,13 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Image storage is not configured.' }, { status: 503 });
   }
 
+  const owner = getStudioSessionOwner(sessionToken, { secret: providerSettings.sessionSecret });
+  if (!owner) {
+    return NextResponse.json({ error: 'Studio authentication is required.' }, { status: 401 });
+  }
+
   try {
-    const capability = createMediaUploadCapability(await request.json(), mediaSettings);
+    const capability = createMediaUploadCapability(await request.json(), mediaSettings, { owner });
     return NextResponse.json(capability, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error.message || 'Invalid image upload.' }, { status: 400 });

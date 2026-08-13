@@ -67,6 +67,21 @@ test('createMediaUploadCapability rejects unsupported or oversized uploads', () 
   );
 });
 
+test('createMediaUploadCapability requires a 32-hex session owner when not supplied', () => {
+  assert.throws(
+    () => createMediaUploadCapability({ name: 'reference.png', type: 'image/png', size: 4 }, settings),
+    /verified studio session/i,
+  );
+  assert.throws(
+    () => createMediaUploadCapability(
+      { name: 'reference.png', type: 'image/png', size: 4 },
+      settings,
+      { owner: 'not-a-valid-owner' },
+    ),
+    /verified studio session/i,
+  );
+});
+
 test('createMediaReadUrl can mint a signed HEAD verification URL', () => {
   const mediaId = 'media_0123456789abcdef0123456789abcdef';
   const url = new URL(createMediaReadUrl(mediaId, settings, {
